@@ -17,13 +17,13 @@ using namespace std;
 
 //Global variables
 //Geometry
-#define nx 4
-#define ny 4
+#define nx 20
+#define ny 20
 #define lx 0.05
 #define ly 0.05
 #define N nx*ny
-long double A[N][N],b[N],T[N],T0[N],TF[N];
-long double deltax,deltay,deltat,rx,ry,alpha,Landa,cp,p,h,h_side,t,Tinf,T00,TS,C1x,C2x,C1y,C2y,Tol_ss,Res,sum,time;
+float A[N][N],b[N],T[N],T0[N],TF[N];
+float deltax,deltay,deltat,rx,ry,alpha,Landa,cp,p,h,h_side,t,Tinf,T00,TS,C1x,C2x,C1y,C2y,Tol_ss,Res,sum,time;
 int time_step;
 
 
@@ -45,6 +45,9 @@ void North_East_Point ();
 void Linear_Solver ();
 void Calculate_Res ();
 void Update_T ();
+void matmul(float rr[N], float AA[N][N], float TT[N],float bb[N]);
+float dot_product(float rr_hat[N],float rr[N]);
+void matmul_2(float vv[N], float AA[N][N], float yy[N]);
 //
 
 ////////////////Begin_Main code///////////////////////////////////////////////////
@@ -63,7 +66,7 @@ h_side=36.4/(p*cp);//h_side/pcp
 T00=298.15;// initial temp
 Tinf=298.15;// infinite temp
 TS=423.15;// B.C in south boundary
-Tol_ss=0.005;
+Tol_ss=0.05;
 Res=10.0;
 
 alpha=Landa/(p*cp);
@@ -90,8 +93,8 @@ Zero_A_b ();
 Initial_C ();
 //
 //Cout_T0();
-//while (Res>Tol_ss)
-//{
+while (Res>Tol_ss)
+{
 time_step=time_step+1;
 time=time+deltat;
 //Create Ax=b
@@ -116,7 +119,7 @@ Calculate_Res ();
 //Cout_T0 ();
 Update_T ();
 
-//}
+}
 
 
 //Output 
@@ -345,6 +348,89 @@ void North_East_Point ()
 
 void Linear_Solver ()
 {
+//declerimg parameters
+	float r[N],r_hat[N],y[N],tt[N],s[N],k[N],p[N],v[N],z[N];
+	float rho,rho_old,alpha,omega,beta,resid;
+	int i,j;
+	bool converged ;
+	
+	// initial guess according to lecture content
+
+	for (int i=0;i<N;i++)
+	{
+		T[i]=b[i]/A[i][i];
+	}
+	
+	// variable initialize
+	matmul (r,A,T,b);
+	
+	for (int i=0;i<N;i++)
+	{
+		r_hat[i]=r[i];
+	}
+	rho=1.0;
+	alpha=1.0;
+	omega=1.0;
+	for (int i=0;i<N;i++)
+	{
+		v[i]=0.0;
+		p[i]=0.0;
+	}
+	
+	// precondition vector K=diag(A)
+	for (int i=0;i<N;i++)
+	{
+		k[i]=A[i][i];
+	} 
+	
+	// Preconditioned BICGSTAB algorithm main body
+	
+	converged = false;
+	
+	while (converged == false)// check if the norm is satisfied 
+	{
+	
+	rho_old=rho;
+	
+	rho=dot_product(r_hat,r);
+	beta= (rho/rho_old) * (alpha/omega);
+	
+	for (int i=0;i<N;i++)
+	{
+		p[i]=r[i] + beta * (p[i] - omega*v[i]);
+		y[i]=p[i]/k[i];
+	}  
+  
+  	matmul_2(v,A,y);
+  	alpha= rho/dot_product( r_hat,v);
+  	
+  	for (int i=0;i<N;i++)
+	{
+		s[i]=r[i]-alpha*v[i];
+		z[i]=s[i]/k[i];
+	}  
+	
+  	matmul_2(tt,A,z);
+  	omega= dot_product(tt,s)/dot_product(tt,tt);
+  	
+  	for (int i=0;i<N;i++)
+	{
+		T[i]=T[i] + alpha *y[i] + omega * z[i];
+		r[i]=s[i] - omega * tt[i];
+	} 
+ 	
+ 	resid = 0.0;
+  
+ 	for (int i=0;i<N;i++)
+ 	{
+ 		resid=resid + r[i]*r[i];
+	}
+  	resid = sqrt(resid)/N;
+	if( resid < 1e-9)
+     converged= true;
+
+  
+	}
 
 
 	
@@ -375,3 +461,60 @@ void Update_T ()
 	
 }
 ////////////////Begin_Update_T///////////////////////////////////////////////////
+
+////////////////Begin_matmul///////////////////////////////////////////////////
+
+void matmul(float rr[N], float AA[N][N], float TT[N],float bb[N])
+{
+	float sum[N];
+	for (int i=0;i<N;i++)
+	{
+		sum[i]=0.0;
+		for (int j=0;j<N;j++)
+		{
+		
+		sum[i]=sum[i]+A[i][j]*T[j];
+		
+		}
+		rr[i]=b[i]-sum[i];
+	}
+}
+
+///////////////End_matmul//////////////////////////////////////////////////////
+
+////////////////Begin_matmul_2///////////////////////////////////////////////////
+
+void matmul_2(float vv[N], float AA[N][N], float yy[N])
+{
+	float sum[N];
+	for (int i=0;i<N;i++)
+	{
+		sum[i]=0.0;
+		for (int j=0;j<N;j++)
+		{
+		
+		sum[i]=sum[i]+AA[i][j]*yy[j];
+		
+		}
+		vv[i]=sum[i];
+	}
+}
+
+///////////////End_matmul_2//////////////////////////////////////////////////////
+
+////////////////Begin_dot_product///////////////////////////////////////////////////
+
+float dot_product(float rr_hat[N],float rr[N])
+{
+	float sum=0.0;
+	for (int i=0;i<N;i++)
+		{
+		
+		sum=sum+rr_hat[i]*rr[i];
+		
+		}
+	
+	return sum;
+}
+
+///////////////End_dot_product//////////////////////////////////////////////////////
